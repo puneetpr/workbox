@@ -23,6 +23,10 @@ module.exports = {
   rules: {
     "jsdoc/check-types": 2,
     "jsdoc/newline-after-description": 2,
+    "max-len": [2, {
+      "ignorePattern": "^\\s*import",
+      "ignoreUrls": true
+    }]
   },
   plugins: [
     'jsdoc',
@@ -32,6 +36,9 @@ module.exports = {
     parser: 'babel-eslint',
     env: {
       mocha: true,
+    },
+    globals: {
+      expectError: false
     },
     rules: {
       'max-len': 0,

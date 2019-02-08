@@ -8,19 +8,17 @@
 
 import {DBWrapper} from 'workbox-core/_private/DBWrapper.mjs';
 import {deleteDatabase} from 'workbox-core/_private/deleteDatabase.mjs';
-
-import {DB_NAME, DB_VERSION, OBJECT_STORE_NAME, INDEXED_PROP} from 'workbox-background-sync/lib/constants.mjs';
 import {QueueStore} from 'workbox-background-sync/lib/QueueStore.mjs';
 import {StorableRequest} from 'workbox-background-sync/lib/StorableRequest.mjs';
 
 
-const getObjectStoreEntries = async (version = DB_VERSION) => {
-  return await new DBWrapper(DB_NAME, version).getAll(OBJECT_STORE_NAME);
+const getObjectStoreEntries = async () => {
+  return await new DBWrapper('workbox-background-sync', 3).getAll('requests');
 };
 
 describe(`QueueStore`, function() {
   beforeEach(async function() {
-    await deleteDatabase(DB_NAME);
+    await deleteDatabase('workbox-background-sync');
   });
 
   describe(`constructor`, function() {
@@ -52,21 +50,22 @@ describe(`QueueStore`, function() {
       expect(entries[1].requestData.url).to.equal(`${location.origin}/two`);
     });
 
-    it(`should handle upgrading from version 1 to 2`, async function() {
-      const dbv1 = new DBWrapper(DB_NAME, 1, {
+    it(`should handle upgrading from version 1`, async function() {
+      const dbv1 = new DBWrapper('workbox-background-sync', 1, {
         onupgradeneeded: (event) => event.target.result
-            .createObjectStore(OBJECT_STORE_NAME, {autoIncrement: true})
-            .createIndex(INDEXED_PROP, INDEXED_PROP, {unique: false}),
+            .createObjectStore('requests', {autoIncrement: true})
+            .createIndex('queueName', 'queueName', {unique: false}),
       });
 
-      await dbv1.add(OBJECT_STORE_NAME, {
+      // Add entries in v1 format.
+      await dbv1.add('requests', {
         queueName: 'a',
         storableRequest: {
           url: `${location.origin}/one`,
           timestamp: 123,
           requestInit: {
             method: 'POST',
-            mode: 'no-cors',
+            mode: 'cors',
             headers: {
               'x-foo': 'bar',
               'x-qux': 'baz',
@@ -74,8 +73,7 @@ describe(`QueueStore`, function() {
           },
         },
       });
-
-      await dbv1.add(OBJECT_STORE_NAME, {
+      await dbv1.add('requests', {
         queueName: 'b',
         storableRequest: {
           url: `${location.origin}/two`,
@@ -85,8 +83,7 @@ describe(`QueueStore`, function() {
           },
         },
       });
-
-      await dbv1.add(OBJECT_STORE_NAME, {
+      await dbv1.add('requests', {
         queueName: 'a',
         storableRequest: {
           url: `${location.origin}/three`,
@@ -95,36 +92,84 @@ describe(`QueueStore`, function() {
         },
       });
 
-      // Creating the new `QueueStore` should register the upgrade logic.
-      new QueueStore('a');
-      const queueStore2 = new QueueStore('b');
       const sr = await StorableRequest.fromRequest(new Request('/four'));
       const requestData = sr.toObject();
       const timestamp = Date.now();
       const metadata = {a: '1'};
 
-      // Pushing an entry should trigger the database open (and the upgrade).
-      queueStore2.pushEntry({requestData, timestamp, metadata});
+      // Creating the new `QueueStore` and pushing a new entry should trigger
+      // the database open (and thus the upgrade logic).
+      const queueStore = new QueueStore('a');
+      queueStore.pushEntry({requestData, timestamp, metadata});
 
       const entries = await getObjectStoreEntries();
-      expect(entries).to.have.lengthOf(4);
+
+      // All the old entries should have been removed.
+      expect(entries).to.have.lengthOf(1);
+
       expect(entries[0].id).to.equal(1);
-      expect(entries[0].timestamp).to.equal(123);
+      expect(entries[0].timestamp).to.equal(timestamp);
+      expect(entries[0].metadata).to.deep.equal(metadata);
       expect(entries[0].queueName).to.equal('a');
-      expect(entries[0].requestData.url).to.equal(`${location.origin}/one`);
-      expect(entries[1].id).to.equal(2);
-      expect(entries[1].timestamp).to.equal(234);
-      expect(entries[1].queueName).to.equal('b');
-      expect(entries[1].requestData.url).to.equal(`${location.origin}/two`);
-      expect(entries[2].id).to.equal(3);
-      expect(entries[2].timestamp).to.equal(345);
-      expect(entries[2].queueName).to.equal('a');
-      expect(entries[2].requestData.url).to.equal(`${location.origin}/three`);
-      expect(entries[3].id).to.equal(4);
-      expect(entries[3].timestamp).to.equal(timestamp);
-      expect(entries[3].metadata).to.deep.equal(metadata);
-      expect(entries[3].queueName).to.equal('b');
-      expect(entries[3].requestData.url).to.equal(`${location.origin}/four`);
+      expect(entries[0].requestData.url).to.equal(`${location.origin}/four`);
+    });
+
+    it(`should handle upgrading from version 2`, async function() {
+      const dbv2 = new DBWrapper('workbox-background-sync', 2, {
+        onupgradeneeded: (event) => event.target.result
+            .createObjectStore('requests', {
+              autoIncrement: true,
+              keyPath: 'id',
+            })
+            .createIndex('queueName', 'queueName', {unique: false}),
+      });
+
+      // Add entries in v2 format.
+      await dbv2.add('requests', {
+        queueName: 'a',
+        metadata: {one: '1', two: '2'},
+        storableRequest: {
+          url: `${location.origin}/one`,
+          timestamp: 123,
+          requestInit: {
+            method: 'POST',
+            mode: 'cors',
+            headers: {
+              'x-foo': 'bar',
+              'x-qux': 'baz',
+            },
+          },
+        },
+      });
+      await dbv2.add('requests', {
+        queueName: 'b',
+        metadata: {three: '3', four: '4'},
+        storableRequest: {
+          url: `${location.origin}/two`,
+          timestamp: 234,
+          requestInit: {
+            mode: 'cors',
+          },
+        },
+      });
+
+      const sr = await StorableRequest.fromRequest(new Request('/four'));
+      const requestData = sr.toObject();
+      const timestamp = Date.now();
+      const metadata = {a: '1'};
+
+      // Creating the new `QueueStore` and pushing a new entry should trigger
+      // the database open (and thus the upgrade logic).
+      const queueStore = new QueueStore('a');
+      queueStore.pushEntry({requestData, timestamp, metadata});
+
+      const entries = await getObjectStoreEntries();
+
+      expect(entries[0].id).to.equal(1);
+      expect(entries[0].timestamp).to.equal(timestamp);
+      expect(entries[0].metadata).to.deep.equal(metadata);
+      expect(entries[0].queueName).to.equal('a');
+      expect(entries[0].requestData.url).to.equal(`${location.origin}/four`);
     });
   });
 

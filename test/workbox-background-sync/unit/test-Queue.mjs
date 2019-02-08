@@ -8,7 +8,6 @@
 
 import {Queue} from 'workbox-background-sync/Queue.mjs';
 import {QueueStore} from 'workbox-background-sync/lib/QueueStore.mjs';
-import {DB_NAME, DB_VERSION, OBJECT_STORE_NAME} from 'workbox-background-sync/lib/constants.mjs';
 import {DBWrapper} from 'workbox-core/_private/DBWrapper.mjs';
 import {deleteDatabase} from 'workbox-core/_private/deleteDatabase.mjs';
 
@@ -16,7 +15,7 @@ import {deleteDatabase} from 'workbox-core/_private/deleteDatabase.mjs';
 const MINUTES = 60 * 1000;
 
 const getObjectStoreEntries = async () => {
-  return await new DBWrapper(DB_NAME, DB_VERSION).getAll(OBJECT_STORE_NAME);
+  return await new DBWrapper('workbox-background-sync', 3).getAll('requests');
 };
 
 // Stub the SyncManager interface on registration.
@@ -63,7 +62,7 @@ describe(`Queue`, function() {
   beforeEach(async function() {
     sandbox.restore();
     Queue._queueNames.clear();
-    await deleteDatabase(DB_NAME);
+    await deleteDatabase('workbox-background-sync');
   });
 
   describe(`constructor`, function() {
@@ -158,7 +157,7 @@ describe(`Queue`, function() {
       expect(args[0].requestData.method).to.equal(requestInit.method);
       expect(args[0].requestData.headers['x-foo']).to.equal(requestInit.headers['x-foo']);
       expect(args[0].requestData.mode).to.deep.equal(requestInit.mode);
-      expect(args[0].requestData.body).to.be.instanceOf(Blob);
+      expect(args[0].requestData.body).to.be.instanceOf(ArrayBuffer);
       expect(args[0].timestamp).to.equal(timestamp);
       expect(args[0].metadata).to.deep.equal(metadata);
     });
@@ -236,7 +235,7 @@ describe(`Queue`, function() {
       expect(args[0].requestData.method).to.equal(requestInit.method);
       expect(args[0].requestData.headers['x-foo']).to.equal(requestInit.headers['x-foo']);
       expect(args[0].requestData.mode).to.deep.equal(requestInit.mode);
-      expect(args[0].requestData.body).to.be.instanceOf(Blob);
+      expect(args[0].requestData.body).to.be.instanceOf(ArrayBuffer);
       expect(args[0].timestamp).to.equal(timestamp);
       expect(args[0].metadata).to.deep.equal(metadata);
     });
@@ -301,6 +300,7 @@ describe(`Queue`, function() {
       };
 
       await queue.pushRequest({request: new Request(requestURL, requestInit)});
+
       // Add a second request to ensure the first one is returned.
       await queue.pushRequest({request: new Request('/two')});
 
@@ -555,7 +555,11 @@ describe(`Queue`, function() {
       const originalSyncManager = registration.sync;
       delete registration.sync;
 
-      const queue = new Queue('foo');
+      // We need to set the `onSync` function to a no-op, otherwise creating
+      // the Queue instance in a non-supporting browser will try to access
+      // IndexedDB and we don't have a way to await that completion.
+      const onSync = sandbox.spy();
+      const queue = new Queue('foo', {onSync});
       await queue.registerSync();
 
       registration.sync = originalSyncManager;

@@ -25,8 +25,8 @@ describe(`StorableRequest`, function() {
       const storableRequest = await StorableRequest.fromRequest(request);
       expect(storableRequest._requestData.url).to.equal(`${location.origin}/foo`);
       expect(storableRequest._requestData.method).to.equal('POST');
-      expect(storableRequest._requestData.body).to.be.instanceOf(Blob);
-      expect(storableRequest._requestData.body.size).to.equal(10);
+      expect(storableRequest._requestData.body).to.be.instanceOf(ArrayBuffer);
+      expect(storableRequest._requestData.body.byteLength).to.equal(10);
 
       expect(storableRequest._requestData.mode).to.equal('cors');
       expect(storableRequest._requestData.headers['x-foo']).to.equal('bar');
@@ -86,8 +86,8 @@ describe(`StorableRequest`, function() {
       expect(Object.getPrototypeOf(requestData)).to.equal(Object.prototype);
       expect(requestData.url).to.equal(`${location.origin}/foo`);
       expect(requestData.method).to.equal('POST');
-      expect(requestData.body).to.be.instanceOf(Blob);
-      expect(requestData.body.size).to.equal(10);
+      expect(requestData.body).to.be.instanceOf(ArrayBuffer);
+      expect(requestData.body.byteLength).to.equal(10);
       expect(requestData.mode).to.equal('cors');
       expect(requestData.headers['x-foo']).to.equal('bar');
       expect(requestData.headers['x-qux']).to.equal('baz');
